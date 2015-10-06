@@ -131,18 +131,24 @@ include_directories(
 # add_dependencies(btp_vision ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-add_executable(btp_vision_node src/btp_vision_node_cleaned.cpp)
+add_executable(images_transport_node src/images_transport_node.cpp)
+
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 # add_dependencies(btp_vision_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
- target_link_libraries(btp_vision_node
+ target_link_libraries(images_transport_node 
    ${catkin_LIBRARIES}
-   ${OpenCV_LIBRARIES}	
+   ${OpenCV_LIBRARIES}
  )
 
+add_executable(vision_stuff_node src/vision_stuff_node.cpp)
+ target_link_libraries(vision_stuff_node 
+   ${catkin_LIBRARIES}
+   ${OpenCV_LIBRARIES}		
+ )
 #############
 ## Install ##
 #############
