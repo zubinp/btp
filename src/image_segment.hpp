@@ -9,6 +9,7 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
 #include "opencv2/opencv.hpp"
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
@@ -19,8 +20,47 @@ using namespace message_filters;
 using namespace cv;
 using namespace std;
 
+void convertCameraInfoToMats(
+  const CameraInfoConstPtr& camera_info_msg,
+  cv::Mat& intr,
+  cv::Mat& dist)
+{
+  // set intrinsic matrix from K vector
+  intr = cv::Mat(3, 3, CV_64FC1);
+  for (int idx = 0; idx < 9; ++idx)
+  {
+    int i = idx % 3;
+    int j = idx / 3;
+    intr.at<double>(j, i) = camera_info_msg->K[idx];
+  }
+  
+  // set distortion matrix from D vector
+  int d_size = camera_info_msg->D.size();
+  dist = cv::Mat(1, d_size, CV_64FC1);
+  for (int idx = 0; idx < d_size; ++idx)
+  {
+    dist.at<double>(0, idx) = camera_info_msg->D[idx];   
+  }
+}
 
-void img_seg_callback(const ImageConstPtr& image1, const ImageConstPtr& image2)
+// double get_xyz(int u,int v,const cv::Mat& intr_rect_ir,uint16_t z)
+// {
+//   double pt[] = {0,0,0};
+//   double cx = intr_rect_ir.at<double>(0,2);
+//   double cy = intr_rect_ir.at<double>(1,2);
+//   double fx_inv = 1.0 / intr_rect_ir.at<double>(0,0);
+//   double fy_inv = 1.0 / intr_rect_ir.at<double>(1,1);
+
+//   double z_metric = z * 0.001;
+             
+//   pt[0] = z_metric * ((u - cx) * fx_inv);
+//   pt[1] = z_metric * ((v - cy) * fy_inv);
+//   pt[2] = z_metric;  
+//   return pt[];   
+// }
+
+
+void img_seg_callback(const ImageConstPtr& image1, const ImageConstPtr& image2, const CameraInfoConstPtr& cam_info)
 {
 
   // Solve all of perception here...
@@ -62,14 +102,14 @@ void img_seg_callback(const ImageConstPtr& image1, const ImageConstPtr& image2)
 
 
  cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
- inRange(imgHSV, Scalar(39, 78, 136), Scalar(179, 255, 255), imgThresholded); //Threshold the image
+ inRange(imgHSV, Scalar(145, 82, 155), Scalar(179, 255, 255), imgThresholded); //Threshold the image
  //erode and dilate again to fill out the holes in the image
  erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) );
  dilate( imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) ); 
  dilate( imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) ); 
  erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) );
 
- //imshow("Thresholded Image", imgThresholded); //show the thresholded image
+ imshow("Thresholded Image", imgThresholded); //show the thresholded image
  findContours(imgThresholded, contours, hierarchy,CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE );
  
  //find the largest contour and the corresponding bounding rectangle for it
@@ -105,9 +145,17 @@ void img_seg_callback(const ImageConstPtr& image1, const ImageConstPtr& image2)
 
    int x,y;
    int point_counter = 0;             //counter for number of valid points inside detected blob
-   float distance_sum = 0; 
+   float distance_sum = 0;
+   double xyz_sum[] = {0,0,0};
    float distance_of_blob = 0;        
    unsigned short distance_of_pixel;
+  cv::Mat intrinsic_mat, distortion_mat;
+  convertCameraInfoToMats(cam_info, intrinsic_mat, distortion_mat);
+  double cx = intrinsic_mat.at<double>(0,2);
+  double cy = intrinsic_mat.at<double>(1,2);
+  double fx_inv = 1.0 / intrinsic_mat.at<double>(0,0);
+  double fy_inv = 1.0 / intrinsic_mat.at<double>(1,1);
+
    for( y = 0; y < nRows; y++)
    {
 
@@ -122,8 +170,23 @@ void img_seg_callback(const ImageConstPtr& image1, const ImageConstPtr& image2)
         //if uint16 distance == 0 then it means that the point is not detected by depth camera
         if(distance_of_pixel != 0)
         {
-         distance_sum += float(distance_of_pixel);
+         //distance_sum += float(distance_of_pixel);
+        	
+  			double pixel_xyz[] = {0,0,0};
+  			double z_metric = distance_of_pixel * 0.1;
+  			
+             
+  			pixel_xyz[0] = z_metric * ((x - cx) * fx_inv);
+ 			pixel_xyz[1] = z_metric * ((y - cy) * fy_inv);
+  			pixel_xyz[2] = z_metric;  
+  			xyz_sum[0] += 	pixel_xyz[0];
+			xyz_sum[1] += 	pixel_xyz[1];
+			xyz_sum[2] += 	pixel_xyz[2];
+
+
          point_counter++;
+
+
         }
         
        }
@@ -131,7 +194,7 @@ void img_seg_callback(const ImageConstPtr& image1, const ImageConstPtr& image2)
        }
     }
 
-    if(point_counter != 0) {ROS_INFO_STREAM("Distance of blob is" <<(distance_sum/float(point_counter)/10) << " cm"<< endl);}
+    if(point_counter != 0) {ROS_INFO_STREAM("X Y and Z position of blob in cms is" <<(xyz_sum[0]/double(point_counter)) << ", " <<(xyz_sum[1]/double(point_counter)) << ", " << (xyz_sum[2]/double(point_counter)) << endl);}
     
     //following is the case when rgb detects the blob, but it is out of the distance range of depth camera
     else ROS_INFO_STREAM("Blob is detected but not in range" << endl);

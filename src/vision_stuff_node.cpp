@@ -16,11 +16,11 @@ int main(int argc, char** argv)
   ros::NodeHandle nh;
   message_filters::Subscriber<Image> image1_sub(nh, "/image_converter/output_depth", 1);
   message_filters::Subscriber<Image> image2_sub(nh, "/image_converter/output_color", 1);
-   
-  typedef sync_policies::ApproximateTime<Image, Image> MySyncPolicy;
+  message_filters::Subscriber<CameraInfo> info_sub(nh, "/camera/rgb/camera_info", 1); 
+  typedef sync_policies::ApproximateTime<Image, Image, CameraInfo> MySyncPolicy;
   // ApproximateTime takes a queue size as its constructor argument, hence MySyncPolicy(10)
-  Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), image1_sub, image2_sub);
-  sync.registerCallback(boost::bind(&img_seg_callback, _1, _2));
+  Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), image1_sub, image2_sub,info_sub);
+  sync.registerCallback(boost::bind(&img_seg_callback, _1, _2,_3));
 
   ros::spin();
 
